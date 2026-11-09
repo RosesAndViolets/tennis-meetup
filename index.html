@@ -91,7 +91,7 @@ let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
 const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
 const editing = new Set(); // court cards currently open for editing (not saved)
 let cloud; // set once Firebase has loaded (see Cloud sync below)
-const save = () => { localStorage.meetup = JSON.stringify(S); push(); };
+const save = () => { focus = null; localStorage.meetup = JSON.stringify(S); push(); };
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const toggle = (a, x) => a.includes(x) ? a.splice(a.indexOf(x), 1) : a.push(x);
 const NEW = {
@@ -133,6 +133,7 @@ const wp = s => { const p = latLng(s); return p ? {location: {latLng: {latitude:
 const fmt = ll => ll.lat().toFixed(5) + ',' + ll.lng().toFixed(5);
 
 let map, geocoder, info, markers = [], picking = null, picked;
+let focus = null; // while a route is shown: only that court and the members with a route get pins
 
 function initMap() {
   map = new google.maps.Map(document.getElementById('map'), {
@@ -244,8 +245,8 @@ function pins() {
     });
     markers.push(m);
   };
-  S.members.forEach((m, i) => pin(m, m.start, SPOTS[m.start][0], m.name || `Member ${i + 1}`));
-  S.courts.forEach((c, i) => pin(c, 'address', '🎾', c.name || `Court ${i + 1}`));
+  S.members.forEach((m, i) => (!focus || focus.people.includes(m)) && pin(m, m.start, SPOTS[m.start][0], m.name || `Member ${i + 1}`));
+  S.courts.forEach((c, i) => (!focus || focus.court == c) && pin(c, 'address', '🎾', c.name || `Court ${i + 1}`));
 }
 
 const notSet = 'Not set — click, then click the map';
@@ -384,6 +385,8 @@ async function show(k) {
   out.querySelectorAll('tr[data-row]').forEach(tr => tr.classList.toggle('sel', tr.dataset.row == k));
   shown.forEach(o => o.setMap ? o.setMap(null) : o.map = null);
   shown = [];
+  focus = {court: c, people: people.filter((_, i) => t[i][ranked[k].c])};
+  pins();
   const bounds = new google.maps.LatLngBounds();
   await Promise.all(people.map(async (p, i) => {
     const hit = t[i][ranked[k].c];
@@ -404,6 +407,7 @@ async function show(k) {
   if (mine == showSeq && !bounds.isEmpty()) map.fitBounds(bounds, 70);
 }
 out.addEventListener('click', e => {
+  if (e.target.id == 'showall') { focus = null; return pins(); }
   const tr = e.target.closest('tr[data-row]');
   if (!tr || !last) return;
   map.getDiv().scrollIntoView({behavior: 'smooth', block: 'center'});
@@ -446,7 +450,7 @@ go.onclick = async () => {
     }
     const ranked = rank(t, cs.length);
     last = {people, cs, t, ranked};
-    out.innerHTML = `<p><small>Click a row to draw everyone's routes to that court on the map.</small></p><table><tr><th>Court</th><th>Everyone there in</th><th>Total</th><th>Price</th>
+    out.innerHTML = `<p><small>Click a row to draw everyone's routes to that court on the map.</small> <button id=showall>Show all pins</button></p><table><tr><th>Court</th><th>Everyone there in</th><th>Total</th><th>Price</th>
       ${people.map(p => `<th>${esc(p.name)}</th>`).join('')}</tr>
       ${ranked.map((r, k) => `<tr data-row=${k} class="${k ? '' : 'best'}">
         <td>${esc(cs[r.c].name || cs[r.c].address)}</td><td>${mins(r.worst)}</td><td>${mins(r.total)}</td>
