@@ -1,0 +1,381 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tennis Meetup</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--text:#1d2329;--muted:#6b7480;--accent:#1a73e8;--accent-soft:#e8f0fe;--good:#e6f4ea}
+  *{box-sizing:border-box}
+  body{font:15px system-ui;margin:0;background:var(--bg);color:var(--text)}
+  main{max-width:1100px;margin:auto;padding:16px}
+  h1{margin:4px 0 12px;font-size:22px}
+  h2{font-size:16px;margin:24px 0 8px}
+  #map{height:480px;border-radius:12px}
+  #hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+  #hint.picking{color:var(--accent);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;position:relative}
+  .del{position:absolute;top:6px;right:6px;border:0;background:none;cursor:pointer;color:var(--muted)}
+  .acts{position:absolute;top:6px;right:6px;display:flex;gap:2px}
+  .acts button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:15px;padding:2px 6px;border-radius:6px}
+  .acts button:hover{background:var(--accent-soft);color:var(--text)}
+  .card.show{padding:16px;display:grid;gap:10px;align-content:start}
+  .hero h3{margin:0;font:700 18px system-ui;padding-right:56px}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+  .price{font:700 22px system-ui;color:var(--accent)}
+  .price small{font:400 12px system-ui;color:var(--muted)}
+  .row{display:grid;grid-template-columns:4.5em 1fr;gap:8px;font-size:13px}
+  .row span{color:var(--muted)}.row b{font-weight:500}
+  .card.show .chips{margin:0}
+  span.chip{cursor:default}
+  .reqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;font-size:13px;color:var(--muted)}
+  .reqs input{width:4.5em;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
+  #req small{display:block;margin-top:10px;color:var(--muted)}
+  .groups{display:grid;gap:6px;margin-top:10px}.groups>div{display:flex;gap:6px;align-items:center}
+  .groups select,.groups input{font:inherit;padding:3px;border:1px solid var(--line);border-radius:6px;min-width:0}
+  .top{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding-right:56px}
+  .avatar{width:48px;height:48px;border-radius:50%;background:#dfe3e8 center/cover;display:grid;place-items:center;font-weight:600;font-size:18px;color:#556;flex:none}
+  label.avatar{cursor:pointer}
+  .title{font:600 16px system-ui;border:0;border-bottom:1px solid transparent;width:100%;padding:2px 0;background:none;color:var(--text)}
+  .title:focus{outline:none;border-color:var(--accent)}
+  .places{display:grid;gap:6px}
+  .place{display:block;text-align:left;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:none;cursor:pointer;font:inherit;color:var(--text)}
+  .place small{color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .place.on{border-color:var(--accent);background:var(--accent-soft)}
+  .place.empty small{font-style:italic}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:none;cursor:pointer;font:inherit;font-size:13px;color:var(--text)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fields{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:10px;font-size:13px;color:var(--muted)}
+  .fields input{font:inherit;color:var(--text);padding:3px 6px;border:1px solid var(--line);border-radius:6px;min-width:0}
+  .add{border:1px dashed var(--line);border-radius:12px;background:none;cursor:pointer;font:inherit;color:var(--muted);min-height:120px}
+  #go{margin:20px 0 8px;padding:10px 18px;border:0;border-radius:999px;background:var(--accent);color:#fff;font:600 15px system-ui;cursor:pointer}
+  table{border-collapse:collapse;width:100%;background:var(--card)}
+  td,th{border:1px solid var(--line);padding:6px 8px;text-align:left}
+  .best{background:var(--good);font-weight:600}
+  .pin{display:flex;flex-direction:column;align-items:center;font:600 12px system-ui}
+  .pin .lb{background:#fff;padding:1px 6px;border-radius:6px;margin-bottom:2px;box-shadow:0 1px 3px #0003;white-space:nowrap}
+  .pin .ic{font-size:20px;background:#fff;border-radius:50%;width:34px;height:34px;display:grid;place-items:center;box-shadow:0 1px 4px #0005}
+  .layers{background:#fff;margin:10px;padding:6px 10px;border-radius:4px;box-shadow:0 1px 4px #0004;font:13px system-ui;display:flex;gap:12px}
+  .card-pop button{margin:2px}
+</style>
+<main>
+  <h1>🎾 Tennis Meetup</h1>
+  <div id="map"></div>
+  <p id="hint"></p>
+  <h2>Members</h2><div class="grid" id="members"></div>
+  <h2>Courts</h2><div class="grid" id="courts"></div>
+  <h2>Requirements</h2><div class="card" id="req"></div>
+  <button id="go">Find best court</button>
+  <div id="out"></div>
+</main>
+<script>
+const KEY = 'AIzaSyDXqEUKYgogDhnNsfylxIClHjznaGgFpIk';
+const MODES = {DRIVE: 'Car', TRANSIT: 'Public transport', BICYCLE: 'Bicycle', TWO_WHEELER: 'Motorbike'};
+const SPOTS = {home: ['🏠', 'Home'], work: ['🏢', 'Work'], custom: ['📍', 'Custom']};
+const TAGS = ['軟式', '硬式'];
+const WHERE = ['Outdoor', 'Indoor'];
+const FACILITIES = ['シャワー', '更衣室', 'カフェ', 'レストラン', '照明', '駐車場'];
+const GROUNDS = ['', '砂入り人工芝', 'ハード', '人工芝', 'クレー(土)', '天然芝'];
+const HINT = 'Click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
+let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
+S.req ||= {facilities: []}; // requirements for the search: g:<ground>, Indoor, Outdoor, total, maxPrice (min court counts), facilities
+S.courts.forEach(c => {
+  c.tags ||= []; c.facilities ||= [];
+  // Older cards had one ground + Outdoor/Indoor tags; turn them into surface groups.
+  c.groups ||= WHERE.filter(w => c.tags.includes(w)).map(where => ({where, ground: c.ground || '', n: c.courts || ''}));
+  c.tags = c.tags.filter(t => !WHERE.includes(t));
+});
+
+const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
+S.members.forEach(m => m.work || Object.assign(m, WORK));
+const editing = new Set(); // court cards currently open for editing (not saved)
+const save = () => localStorage.meetup = JSON.stringify(S);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const toggle = (a, x) => a.includes(x) ? a.splice(a.indexOf(x), 1) : a.push(x);
+const NEW = {
+  members: () => ({name: '', home: '', ...WORK, custom: '', start: 'home', modes: ['DRIVE']}),
+  courts: () => ({name: '', address: '', station: '', price: '', priceWe: '', cost: '', hours: '', closed: '', conditions: '', tags: [], groups: [], facilities: []}),
+};
+// One-time starter list, from the user's own notes. Coordinates are Google's place pins; names are filled in on load.
+const SEED = [
+  {name: '有明テニスの森 (Outdoor Courts A)', address: '35.6342867,139.7872261', groups: [{where: 'Outdoor', ground: 'ハード', n: ''}, {where: 'Indoor', ground: '', n: ''}], price: 1500, priceWe: 1800,
+   cost: '屋外ハード・砂入り人工芝(一般 1時間/面)。インドア 平日4,500 / 土日祝5,400。入場料ありの大会は 2,500/3,000(屋外)', conditions: '都内の小・中・高は割引(屋外750/900)'},
+  {name: 'Tennis Courts (港区あたり)', address: '35.6538624,139.7473826', price: 1300, cost: '夜間照明 +500円/時'},
+  {name: '豊海テニスコート', address: '35.6530235,139.7722258', price: 350, priceWe: 350, cost: '4〜9月 1面5時間 1,750円 / 10〜3月 1面4時間 1,400円 (時間あたりは換算)'},
+  {name: '文花テニスコート', address: '35.7084473,139.8238331', groups: [{where: 'Outdoor', ground: '砂入り人工芝', n: 3}], station: '東武亀戸線 小村井駅', price: 990, priceWe: 1320,
+   conditions: '区民 平日660 / 土日祝880、区民外 990 / 1,320', cost: '照明 +400円/時', hours: '平日 9:00–20:00 / 土日祝 8:00–20:00', closed: '年末年始', facilities: ['照明']},
+  {name: '木場公園テニスコート', address: '35.677371,139.8076515'},
+  {name: 'Tennis Courts (墨田・足立あたり)', address: '35.7187379,139.805605'},
+];
+if (!S.seeded) {
+  S.seeded = 1;
+  SEED.forEach(c => S.courts.push({...NEW.courts(), ...c, addressAt: c.address}));
+}
+// A place is a map-picked name with its coordinates kept in `<field>At`.
+const loc = (o, f) => o[f + 'At'] || o[f];
+const latLng = s => (s || '').match(/^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/)?.slice(1).map(Number);
+const wp = s => { const p = latLng(s); return p ? {location: {latLng: {latitude: p[0], longitude: p[1]}}} : {address: s}; };
+const fmt = ll => ll.lat().toFixed(5) + ',' + ll.lng().toFixed(5);
+
+let map, geocoder, info, markers = [], picking = null, picked;
+
+function initMap() {
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: {lat: 35.68, lng: 139.76}, zoom: 11, mapId: 'DEMO_MAP_ID',
+    gestureHandling: 'greedy', scrollwheel: false, isFractionalZoomEnabled: true, streetViewControl: false,
+    mapTypeControl: true, zoomControl: true, fullscreenControl: false,
+  });
+  geocoder = new google.maps.Geocoder();
+  info = new google.maps.InfoWindow();
+
+  // Traffic / Transit toggles (Map, Terrain and Satellite are in Google's own top-left control).
+  const box = document.createElement('div');
+  box.className = 'layers';
+  for (const [name, Layer] of [['Traffic', google.maps.TrafficLayer], ['Transit', google.maps.TransitLayer]]) {
+    const layer = new Layer(), label = document.createElement('label');
+    label.innerHTML = `<input type=checkbox> ${name}`;
+    label.firstChild.onchange = e => layer.setMap(e.target.checked ? map : null);
+    box.append(label);
+  }
+  map.controls[google.maps.ControlPosition.TOP_CENTER].push(box);
+
+  // Trackpad like the Google Maps site: two-finger swipe pans, pinch (sent as ctrl+wheel) zooms at the cursor.
+  const el = map.getDiv();
+  el.addEventListener('wheel', e => {
+    e.preventDefault(); e.stopPropagation();
+    const r = el.getBoundingClientRect(), b = map.getBounds(), ne = b.getNorthEast(), sw = b.getSouthWest(), c = map.getCenter();
+    const dLat = (sw.lat() - ne.lat()) / r.height, dLng = (ne.lng() - sw.lng()) / r.width; // degrees per pixel
+    if (!e.ctrlKey) return map.moveCamera({center: {lat: c.lat() + e.deltaY * dLat, lng: c.lng() + e.deltaX * dLng}});
+    const at = {lat: ne.lat() + (e.clientY - r.top) * dLat, lng: sw.lng() + (e.clientX - r.left) * dLng};
+    const dz = -e.deltaY * 0.01, k = 2 ** dz;
+    map.moveCamera({zoom: map.getZoom() + dz, center: {lat: at.lat + (c.lat() - at.lat) / k, lng: at.lng + (c.lng() - at.lng) / k}});
+  }, {passive: false, capture: true});
+
+  map.addListener('click', async e => {
+    e.stop?.(); // our card replaces Google's place card
+    const p = {at: fmt(e.latLng), name: await placeName(e.latLng)};
+    if (picking) { const [l, i, f] = picking; return setPlace(l, i, f, p); }
+    picked = p;
+    const btn = (l, i, f, text) => `<button onclick="setPlace('${l}','${i}','${f}')">${text}</button>`;
+    info.setContent(`<div class=card-pop><b>${esc(p.name)}</b><p>
+      ${btn('courts', 'new', 'address', '🎾 Add court here')} ${btn('members', 'new', 'home', '👤 Add member here')}</p>
+      ${S.members.map((m, i) => `<div>${esc(m.name || `Member ${i + 1}`)}: ${Object.keys(SPOTS).map(f => btn('members', i, f, SPOTS[f].join(' '))).join('')}</div>`).join('')}</div>`);
+    info.setPosition(e.latLng);
+    info.open(map);
+  });
+  pins();
+  // Seeded courts start with raw coordinates as their address; swap in a real address.
+  S.courts.filter(c => latLng(c.address)).forEach(async c => {
+    const [lat, lng] = latLng(c.address);
+    c.address = await placeName({lat, lng}); save(); render();
+  });
+}
+
+// ponytail: tapping a Google place gives its address, not its name; add Places API if names matter
+async function placeName(latLng) {
+  try {
+    const {results} = await geocoder.geocode({location: latLng});
+    return (results[0]?.formatted_address || 'Dropped pin').replace(/^日本、(〒\d{3}-\d{4} )?/, '').replace(/, Japan$/, '');
+  } catch { return 'Dropped pin'; }
+}
+
+function pick(l, i, f) {
+  picking = [l, i, f];
+  const who = l == 'courts' ? (S.courts[i].name || `Court ${+i + 1}`) : `${S.members[i].name || `Member ${+i + 1}`}'s ${SPOTS[f][1]}`;
+  hint.textContent = `Now click the map to set ${who}.`;
+  hint.className = 'picking';
+  map.getDiv().scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+function setPlace(l, i, f, p = picked) {
+  if (i == 'new') { S[l].push(NEW[l]()); i = S[l].length - 1; }
+  const o = S[l][i];
+  o[f] = p.name; o[f + 'At'] = p.at;
+  if (l == 'members') o.start = f; // the place you just set becomes the start point
+  picking = null; info.close(); save(); render();
+}
+
+function pins() {
+  if (!map) return;
+  markers.forEach(m => m.map = null);
+  markers = [];
+  const pin = (o, f, icon, label) => {
+    const p = latLng(loc(o, f));
+    if (!p) return;
+    const content = document.createElement('div');
+    content.className = 'pin';
+    content.innerHTML = `<span class=lb>${esc(label)}</span><span class=ic>${icon}</span>`;
+    const m = new google.maps.marker.AdvancedMarkerElement({map, content, position: {lat: p[0], lng: p[1]}, gmpDraggable: true, title: label});
+    m.addListener('dragend', async () => {
+      const ll = new google.maps.LatLng(m.position);
+      o[f + 'At'] = fmt(ll); o[f] = await placeName(ll); save(); render();
+    });
+    markers.push(m);
+  };
+  S.members.forEach((m, i) => pin(m, m.start, SPOTS[m.start][0], m.name || `Member ${i + 1}`));
+  S.courts.forEach((c, i) => pin(c, 'address', '🎾', c.name || `Court ${i + 1}`));
+}
+
+const notSet = 'Not set — click, then click the map';
+function render() {
+  hint.textContent = HINT; hint.className = '';
+  members.innerHTML = S.members.map((m, i) => `<div class=card>
+    <button class=del data-l=members data-del=${i} title=Remove>✕</button>
+    <div class=top>
+      <label class=avatar title="Change photo" style="${m.photo ? `background-image:url(${m.photo})` : ''}">${m.photo ? '' : esc((m.name || '?')[0])}<input type=file accept="image/*" hidden data-photo=${i}></label>
+      <input class=title data-l=members data-i=${i} data-f=name value="${esc(m.name)}" placeholder="Name">
+    </div>
+    <div class=places>${Object.entries(SPOTS).map(([f, [icon, label]]) => `<button class="place ${m.start == f ? 'on' : ''} ${m[f] ? '' : 'empty'}" data-i=${i} data-spot=${f}>
+      ${icon} ${label}<small>${esc(m[f] || notSet)}</small></button>`).join('')}</div>
+    <div class=chips>${Object.entries(MODES).map(([k, label]) => `<button class="chip ${m.modes.includes(k) ? 'on' : ''}" data-i=${i} data-mode=${k}>${label}</button>`).join('')}</div>
+  </div>`).join('') + `<button class=add data-add=members>+ Member</button>`;
+  const edit_ = (c, i) => `      <input class=title data-l=courts data-i=${i} data-f=name value="${esc(c.name)}" placeholder="Court name"></div>
+    <button class="place ${c.address ? '' : 'empty'}" data-i=${i} data-court>📍 Location<small>${esc(c.address || notSet)}</small></button>
+    <div class=fields>
+      駅 <input data-l=courts data-i=${i} data-f=station value="${esc(c.station)}" placeholder="最寄り駅">
+      料金/h <span><input type=number min=0 step=50 data-l=courts data-i=${i} data-f=price value="${esc(c.price)}" placeholder="平日 ¥"> <input type=number min=0 step=50 data-l=courts data-i=${i} data-f=priceWe value="${esc(c.priceWe)}" placeholder="土日祝 ¥"></span>
+      費用メモ <input data-l=courts data-i=${i} data-f=cost value="${esc(c.cost)}" placeholder="照明・初期費用など">
+      営業 <input data-l=courts data-i=${i} data-f=hours value="${esc(c.hours)}" placeholder="平日 9–20 / 土日 8–20">
+      定休日 <input data-l=courts data-i=${i} data-f=closed value="${esc(c.closed)}" placeholder="年末年始">
+      条件 <input data-l=courts data-i=${i} data-f=conditions value="${esc(c.conditions)}" placeholder="区民・都民・勤務地域">
+    </div>
+    <div class=groups>${c.groups.map((g, k) => `<div>
+      <select data-l=courts data-i=${i} data-g=${k} data-f=where>${WHERE.map(w => `<option ${w == g.where ? 'selected' : ''}>${w}</option>`).join('')}</select>
+      <select data-l=courts data-i=${i} data-g=${k} data-f=ground>${GROUNDS.map(x => `<option ${x == g.ground ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <input type=number min=1 data-l=courts data-i=${i} data-g=${k} data-f=n value="${esc(g.n)}" placeholder="面" style="width:4em">
+      <button data-i=${i} data-delg=${k} title=Remove>✕</button></div>`).join('')}
+      <button class=chip data-i=${i} data-addg>+ コート種別</button></div>
+    <div class=chips>${TAGS.map(t => `<button class="chip ${c.tags.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}">${t}</button>`).join('')}</div>
+    <div class=chips>${FACILITIES.map(t => `<button class="chip ${c.facilities.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}" data-list=facilities>${t}</button>`).join('')}</div>`;
+  const R = (label, r) => `<label>${label} <input type=number min=0 data-r="${r}" value="${esc(S.req[r])}" placeholder="—"></label>`;
+  req.innerHTML = `<div class=reqs>${GROUNDS.slice(1).map(g => R(g + ' 最低', 'g:' + g)).join('')}
+    ${WHERE.map(w => R(w + ' 最低', w)).join('')}${R('合計 最低', 'total')}${R('最高 ¥/h(平日)', 'maxPrice')}</div>
+    <div class=chips>必要な設備: ${FACILITIES.map(t => `<button class="chip ${S.req.facilities.includes(t) ? 'on' : ''}" data-rfac="${t}">${t}</button>`).join('')}</div>
+    <small>空欄 = 条件なし。「最低」は面数(面数が未入力のコートは1面として数えます)。</small>`;
+  const row = (k, v) => v ? `<div class=row><span>${k}</span><b>${esc(v)}</b></div>` : '';
+  const yen = n => n ? '¥' + Number(n).toLocaleString() : '';
+  const view = c => `<div class=hero><h3>${esc(c.name || 'Unnamed court')}</h3>
+      <div class=sub>${esc(c.address)}</div>${c.station ? `<div class=sub>🚉 ${esc(c.station)}</div>` : ''}</div>
+    ${c.price || c.priceWe ? `<div class=price>${yen(c.price)}${c.priceWe && c.priceWe != c.price ? ` <small>平日</small> · ${yen(c.priceWe)} <small>土日祝</small>` : ''} <small>/ 時間</small></div>` : ''}
+    <div class=chips>${[...c.groups.map(g => [g.where, g.ground, g.n && g.n + '面'].filter(Boolean).join(' ')), ...c.tags].filter(Boolean).map(t => `<span class="chip on">${esc(t)}</span>`).join('')}</div>
+    ${row('営業', c.hours)}${row('定休日', c.closed)}${row('条件', c.conditions)}${row('費用', c.cost)}
+    ${c.facilities.length ? `<div class=chips>${c.facilities.map(t => `<span class=chip>${esc(t)}</span>`).join('')}</div>` : ''}`;
+  courts.innerHTML = S.courts.map((c, i) => `<div class="card ${editing.has(c) ? '' : 'show'}">
+    <div class=acts><button data-edit=${i} title="${editing.has(c) ? 'Done' : 'Edit'}">${editing.has(c) ? '✓' : '✎'}</button><button data-l=courts data-del=${i} title=Remove>✕</button></div>
+    ${editing.has(c) ? edit_(c, i) : view(c)}
+  </div>`).join('') + `<button class=add data-add=courts>+ Court</button>`;
+  pins();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  const {l, i, del, spot, mode, tag, add, edit, delg, addg, rfac, list = 'tags'} = t.dataset;
+  if (edit != null) { const c = S.courts[edit]; editing.delete(c) || editing.add(c); }
+  else if (delg != null) S.courts[i].groups.splice(delg, 1);
+  else if (addg != null) S.courts[i].groups.push({where: 'Outdoor', ground: '', n: ''});
+  else if (rfac) toggle(S.req.facilities, rfac);
+  else if (del != null) S[l].splice(del, 1);
+  else if (add) S[add].push(NEW[add]());
+  else if (mode) toggle(S.members[i].modes, mode);
+  else if (tag) toggle(S.courts[i][list], tag);
+  else if (spot && S.members[i][spot]) S.members[i].start = spot;
+  else if (spot) return pick('members', i, spot);
+  else if ('court' in t.dataset) return pick('courts', i, 'address');
+  else return;
+  save(); render();
+});
+document.addEventListener('input', e => {
+  const {l, i, f, g, r} = e.target.dataset;
+  if (r) { S.req[r] = e.target.value; save(); }
+  else if (l && f) { (g != null ? S[l][i].groups[g] : S[l][i])[f] = e.target.value; save(); pins(); }
+});
+// Photos are shrunk to 96px squares so they fit in browser storage.
+document.addEventListener('change', e => {
+  const i = e.target.dataset.photo, file = e.target.files?.[0];
+  if (i == null || !file) return;
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas'), s = Math.min(img.width, img.height);
+    c.width = c.height = 96;
+    c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 96, 96);
+    S.members[i].photo = c.toDataURL('image/jpeg', 0.8); save(); render();
+  };
+  img.src = URL.createObjectURL(file);
+});
+
+async function matrix(origins, dests, travelMode) {
+  const r = await fetch('https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Goog-Api-Key': KEY,
+              'X-Goog-FieldMask': 'originIndex,destinationIndex,duration,condition'},
+    body: JSON.stringify({
+      origins: origins.map(s => ({waypoint: wp(s)})),
+      destinations: dests.map(s => ({waypoint: wp(s)})),
+      // ponytail: Google has no motorbike routes in Japan, so use car time
+      travelMode: travelMode == 'TWO_WHEELER' ? 'DRIVE' : travelMode,
+    }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || r.status);
+  return j;
+}
+
+// Best court = the one where the slowest member arrives soonest; ties go to lowest total.
+function rank(t, nCourts) {
+  return [...Array(nCourts).keys()].map(c => {
+    const s = t.map(row => row[c]?.sec ?? Infinity);
+    return {c, worst: Math.max(...s), total: s.reduce((a, b) => a + b, 0)};
+  }).sort((a, b) => (a.worst - b.worst) || (a.total - b.total));
+}
+console.assert(rank([[{sec: 600}, {sec: 300}], [{sec: 600}, {sec: 900}]], 2)[0].c === 0, 'rank: lowest worst wins');
+console.assert(rank([[null, {sec: 3000}]], 2)[0].c === 1, 'rank: unreachable loses');
+
+const mins = s => s == Infinity ? '—' : Math.round(s / 60) + ' min';
+
+// ponytail: a court group with no count typed counts as 1 court
+const count = (c, f) => c.groups.filter(f).reduce((a, g) => a + (+g.n || 1), 0);
+const unmet = c => {
+  const r = S.req, bad = [];
+  const need = (label, have, min) => +min && have < +min && bad.push(`${label} ${have}/${min}面`);
+  GROUNDS.slice(1).forEach(g => need(g, count(c, x => x.ground == g), r['g:' + g]));
+  WHERE.forEach(w => need(w, count(c, x => x.where == w), r[w]));
+  need('合計', count(c, () => true), r.total);
+  if (+r.maxPrice && !(+c.price && +c.price <= +r.maxPrice)) bad.push(`料金 ${c.price ? '¥' + c.price : '不明'} > ¥${r.maxPrice}`);
+  r.facilities.filter(f => !c.facilities.includes(f)).forEach(f => bad.push(`${f}なし`));
+  return bad;
+};
+
+go.onclick = async () => {
+  const people = S.members.filter(m => m.modes.length && loc(m, m.start));
+  const placed = S.courts.filter(c => loc(c, 'address'));
+  const cs = placed.filter(c => !unmet(c).length), ruledOut = placed.filter(c => unmet(c).length);
+  const skipped = ruledOut.length ? `<p><b>Left out (requirements):</b></p><ul>${ruledOut.map(c => `<li>${esc(c.name || c.address)} — ${unmet(c).map(esc).join(', ')}</li>`).join('')}</ul>` : '';
+  if (!people.length || !cs.length) return out.innerHTML = 'Need a member with a start point, and a court that meets the requirements.' + skipped;
+  out.textContent = 'Asking Google Maps…';
+  try {
+    const t = people.map(() => cs.map(() => null)); // t[person][court] = fastest {sec, mode}
+    for (const mode of Object.keys(MODES)) {
+      const who = people.map((_, i) => i).filter(i => people[i].modes.includes(mode));
+      if (!who.length) continue;
+      const res = await matrix(who.map(i => loc(people[i], people[i].start)), cs.map(c => loc(c, 'address')), mode);
+      for (const e of res) {
+        if (e.condition != 'ROUTE_EXISTS') continue;
+        const p = who[e.originIndex ?? 0], c = e.destinationIndex ?? 0, sec = parseInt(e.duration);
+        if (!t[p][c] || sec < t[p][c].sec) t[p][c] = {sec, mode};
+      }
+    }
+    out.innerHTML = `<table><tr><th>Court</th><th>Everyone there in</th><th>Total</th><th>Price</th>
+      ${people.map(p => `<th>${esc(p.name)}</th>`).join('')}</tr>
+      ${rank(t, cs.length).map((r, k) => `<tr class="${k ? '' : 'best'}">
+        <td>${esc(cs[r.c].name || cs[r.c].address)}</td><td>${mins(r.worst)}</td><td>${mins(r.total)}</td>
+        <td>${cs[r.c].price ? '¥' + esc(cs[r.c].price) + (cs[r.c].priceWe ? ' / ¥' + esc(cs[r.c].priceWe) : '') : ''}</td>
+        ${t.map(row => `<td>${row[r.c] ? mins(row[r.c].sec) + ' (' + MODES[row[r.c].mode] + ')' : 'no route'}</td>`).join('')}
+      </tr>`).join('')}</table>` + skipped;
+  } catch (err) { out.textContent = 'Error: ' + err.message; }
+};
+
+render();
+document.head.append(Object.assign(document.createElement('script'),
+  {src: `https://maps.googleapis.com/maps/api/js?key=${KEY}&libraries=marker&loading=async&callback=initMap`}));
+</script>
