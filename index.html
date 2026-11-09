@@ -34,6 +34,17 @@
   .groups select,.groups input{font:inherit;padding:3px;border:1px solid var(--line);border-radius:6px;min-width:0}
   #search{margin-bottom:8px}
   #search gmp-place-autocomplete{width:100%;color-scheme:light}
+  #editor{width:min(640px,94vw);border:0;border-radius:14px;padding:22px;background:var(--card);color:var(--text);box-shadow:0 10px 40px #0005}
+  #editor::backdrop{background:#0006}
+  #editor h3{margin:0 0 14px;font:700 18px system-ui}
+  .form{display:grid;grid-template-columns:7em 1fr;gap:10px 12px;align-items:center;font-size:14px}
+  .form>span{color:var(--muted)}
+  .form input,.form select{font:inherit;color:var(--text);padding:6px 8px;border:1px solid var(--line);border-radius:8px;min-width:0;width:100%;box-sizing:border-box;background:var(--card)}
+  .form .pair{display:flex;gap:8px}.form .chips{margin:0}.form .groups{margin:0}.form .groups select,.form .groups input{width:auto}
+  .form .place{width:100%}
+  .form .groups>.chip{justify-self:start}
+  .foot{display:flex;justify-content:flex-end;margin-top:18px}
+  .foot button{border:0;border-radius:999px;padding:8px 22px;background:var(--accent);color:#fff;font:600 14px system-ui;cursor:pointer}
   .acct{font-size:13px;color:var(--muted);margin:-6px 0 12px}
   .acct input{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
   .acct button{font:inherit;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer;color:var(--text)}
@@ -77,6 +88,7 @@
   <h2>Requirements</h2><div class="card" id="req"></div>
   <button id="go">Find best court</button>
   <div id="out"></div>
+  <dialog id="editor"></dialog>
 </main>
 <script>
 const KEY = 'AIzaSyDXqEUKYgogDhnNsfylxIClHjznaGgFpIk';
@@ -89,7 +101,7 @@ const GROUNDS = ['', '砂入り人工芝', 'ハード', '人工芝', 'クレー(
 const HINT = 'Search or click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
 let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
 const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
-const editing = new Set(); // court cards currently open for editing (not saved)
+let editIdx = null; // index of the court open in the editor dialog
 let cloud; // set once Firebase has loaded (see Cloud sync below)
 const save = () => { focus = null; localStorage.meetup = JSON.stringify(S); push(); };
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -215,6 +227,7 @@ function choose(p, latLng) {
 
 function pick(l, i, f) {
   picking = [l, i, f];
+  if (l != 'courts') editIdx = null;
   const who = l == 'courts' ? (S.courts[i].name || `Court ${+i + 1}`) : `${S.members[i].name || `Member ${+i + 1}`}'s ${SPOTS[f][1]}`;
   hint.textContent = `Now search above or click the map to set ${who}.`;
   hint.className = 'picking';
@@ -290,24 +303,30 @@ function render() {
       ${icon} ${label}<small>${esc(m[f] || notSet)}</small></button>`).join('')}</div>
     <div class=chips>${Object.entries(MODES).map(([k, label]) => `<button class="chip ${m.modes.includes(k) ? 'on' : ''}" data-i=${i} data-mode=${k}>${label}</button>`).join('')}</div>
   </div>`).join('') + `<button class=add data-add=members>+ Member</button>`;
-  const edit_ = (c, i) => `      <input class=title data-l=courts data-i=${i} data-f=name value="${esc(c.name)}" placeholder="Court name"></div>
-    <button class="place ${c.address ? '' : 'empty'}" data-i=${i} data-court>📍 Location<small>${esc(c.address || notSet)}</small></button>
-    <div class=fields>
-      駅 <input data-l=courts data-i=${i} data-f=station value="${esc(c.station)}" placeholder="最寄り駅">
-      料金/h <span><input type=number min=0 step=50 data-l=courts data-i=${i} data-f=price value="${esc(c.price)}" placeholder="平日 ¥"> <input type=number min=0 step=50 data-l=courts data-i=${i} data-f=priceWe value="${esc(c.priceWe)}" placeholder="土日祝 ¥"></span>
-      費用メモ <input data-l=courts data-i=${i} data-f=cost value="${esc(c.cost)}" placeholder="照明・初期費用など">
-      営業 <input data-l=courts data-i=${i} data-f=hours value="${esc(c.hours)}" placeholder="平日 9–20 / 土日 8–20">
-      定休日 <input data-l=courts data-i=${i} data-f=closed value="${esc(c.closed)}" placeholder="年末年始">
-      条件 <input data-l=courts data-i=${i} data-f=conditions value="${esc(c.conditions)}" placeholder="区民・都民・勤務地域">
+  // The editor lives in a dialog (see #editor), not inside the card.
+  const edit_ = (c, i) => {
+    const F = (label, f, ph = '', type = 'text', extra = '') => `<span>${label}</span><input type=${type} ${extra} data-l=courts data-i=${i} data-f=${f} value="${esc(c[f])}" placeholder="${ph}">`;
+    return `<h3>コートを編集</h3>
+    <div class=form>
+      ${F('名前', 'name', 'Court name')}
+      <span>場所</span><button class="place ${c.address ? '' : 'empty'}" data-i=${i} data-court>📍 ${esc(c.address || notSet)}</button>
+      ${F('最寄り駅', 'station', '例: 東武亀戸線 小村井駅')}
+      <span>料金 / 時間</span><span class=pair>${F('', 'price', '平日 ¥', 'number', 'min=0 step=50').slice(13)} ${F('', 'priceWe', '土日祝 ¥', 'number', 'min=0 step=50').slice(13)}</span>
+      ${F('費用メモ', 'cost', '照明・初期費用など')}
+      ${F('営業', 'hours', '平日 9–20 / 土日 8–20')}
+      ${F('定休日', 'closed', '年末年始')}
+      ${F('条件', 'conditions', '区民・都民・勤務地域')}
+      <span>コート</span><div class=groups>${c.groups.map((g, k) => `<div>
+        <select data-l=courts data-i=${i} data-g=${k} data-f=where>${WHERE.map(w => `<option ${w == g.where ? 'selected' : ''}>${w}</option>`).join('')}</select>
+        <select data-l=courts data-i=${i} data-g=${k} data-f=ground>${GROUNDS.map(x => `<option ${x == g.ground ? 'selected' : ''}>${x}</option>`).join('')}</select>
+        <input type=number min=1 data-l=courts data-i=${i} data-g=${k} data-f=n value="${esc(g.n)}" placeholder="面" style="width:4.5em">
+        <button data-i=${i} data-delg=${k} title=Remove>✕</button></div>`).join('')}
+        <button class=chip data-i=${i} data-addg>+ コート種別</button></div>
+      <span>ボール</span><div class=chips>${TAGS.map(t => `<button class="chip ${c.tags.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}">${t}</button>`).join('')}</div>
+      <span>設備</span><div class=chips>${FACILITIES.map(t => `<button class="chip ${c.facilities.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}" data-list=facilities>${t}</button>`).join('')}</div>
     </div>
-    <div class=groups>${c.groups.map((g, k) => `<div>
-      <select data-l=courts data-i=${i} data-g=${k} data-f=where>${WHERE.map(w => `<option ${w == g.where ? 'selected' : ''}>${w}</option>`).join('')}</select>
-      <select data-l=courts data-i=${i} data-g=${k} data-f=ground>${GROUNDS.map(x => `<option ${x == g.ground ? 'selected' : ''}>${x}</option>`).join('')}</select>
-      <input type=number min=1 data-l=courts data-i=${i} data-g=${k} data-f=n value="${esc(g.n)}" placeholder="面" style="width:4em">
-      <button data-i=${i} data-delg=${k} title=Remove>✕</button></div>`).join('')}
-      <button class=chip data-i=${i} data-addg>+ コート種別</button></div>
-    <div class=chips>${TAGS.map(t => `<button class="chip ${c.tags.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}">${t}</button>`).join('')}</div>
-    <div class=chips>${FACILITIES.map(t => `<button class="chip ${c.facilities.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}" data-list=facilities>${t}</button>`).join('')}</div>`;
+    <div class=foot><button id=editdone>完了</button></div>`;
+  };
   const R = (label, r) => `<label>${label} <input type=number min=0 data-r="${r}" value="${esc(S.req[r])}" placeholder="—"></label>`;
   req.innerHTML = `<div class=reqs>${GROUNDS.slice(1).map(g => R(g + ' 最低', 'g:' + g)).join('')}
     ${WHERE.map(w => R(w + ' 最低', w)).join('')}${R('合計 最低', 'total')}${R('最高 ¥/h(平日)', 'maxPrice')}</div>
@@ -321,18 +340,23 @@ function render() {
     <div class=chips>${[...c.groups.map(g => [g.where, g.ground, g.n && g.n + '面'].filter(Boolean).join(' ')), ...c.tags].filter(Boolean).map(t => `<span class="chip on">${esc(t)}</span>`).join('')}</div>
     ${row('営業', c.hours)}${row('定休日', c.closed)}${row('条件', c.conditions)}${row('費用', c.cost)}
     ${c.facilities.length ? `<div class=chips>${c.facilities.map(t => `<span class=chip>${esc(t)}</span>`).join('')}</div>` : ''}`;
-  courts.innerHTML = S.courts.map((c, i) => `<div class="card ${editing.has(c) ? '' : 'show'}">
-    <div class=acts><button data-edit=${i} title="${editing.has(c) ? 'Done' : 'Edit'}">${editing.has(c) ? '✓' : '✎'}</button><button data-l=courts data-del=${i} title=Remove>✕</button></div>
-    ${editing.has(c) ? edit_(c, i) : view(c)}
+  courts.innerHTML = S.courts.map((c, i) => `<div class="card show">
+    <div class=acts><button data-edit=${i} title=Edit>✎</button><button data-l=courts data-del=${i} title=Remove>✕</button></div>
+    ${view(c)}
   </div>`).join('') + `<button class=add data-add=courts>+ Court</button>`;
+  // Keep the editor dialog in step with the data; it hides while you pick a spot on the map.
+  if (editIdx != null && !S.courts[editIdx]) editIdx = null;
+  if (editIdx != null && !picking) { editor.innerHTML = edit_(S.courts[editIdx], editIdx); if (!editor.open) editor.showModal(); }
   pins();
 }
 
+editor.addEventListener('close', () => { if (!picking) editIdx = null; render(); });
 document.addEventListener('click', e => {
   const t = e.target.closest('button');
   if (!t) return;
   const {l, i, del, spot, mode, tag, add, edit, delg, addg, rfac, list = 'tags'} = t.dataset;
-  if (edit != null) { const c = S.courts[edit]; editing.delete(c) || editing.add(c); }
+  if (edit != null) editIdx = +edit;
+  else if (t.id == 'editdone') editor.close();
   else if (delg != null) S.courts[i].groups.splice(delg, 1);
   else if (addg != null) S.courts[i].groups.push({where: 'Outdoor', ground: '', n: ''});
   else if (rfac) toggle(S.req.facilities, rfac);
@@ -342,7 +366,7 @@ document.addEventListener('click', e => {
   else if (tag) toggle(S.courts[i][list], tag);
   else if (spot && S.members[i][spot]) S.members[i].start = spot;
   else if (spot) return pick('members', i, spot);
-  else if ('court' in t.dataset) return pick('courts', i, 'address');
+  else if ('court' in t.dataset) { pick('courts', i, 'address'); return editor.close(); }
   else return;
   save(); render();
 });
