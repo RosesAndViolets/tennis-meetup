@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // Only signed-in, verified emails listed in meta/access may touch anything.
+    // meta/access itself is edited from the command line (admin), never from the app.
+    function ok() {
+      return request.auth != null && request.auth.token.email_verified
+        && get(/databases/$(db)/documents/meta/access).data.emails.hasAny([request.auth.token.email]);
+    }
+    match /meta/access { allow read: if ok(); }
+    match /groups/main { allow read, write: if ok(); }
+  }
+}

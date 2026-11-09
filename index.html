@@ -32,6 +32,9 @@
   #req small{display:block;margin-top:10px;color:var(--muted)}
   .groups{display:grid;gap:6px;margin-top:10px}.groups>div{display:flex;gap:6px;align-items:center}
   .groups select,.groups input{font:inherit;padding:3px;border:1px solid var(--line);border-radius:6px;min-width:0}
+  .acct{font-size:13px;color:var(--muted);margin:-6px 0 12px}
+  .acct input{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
+  .acct button{font:inherit;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer;color:var(--text)}
   .top{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding-right:56px}
   .avatar{width:48px;height:48px;border-radius:50%;background:#dfe3e8 center/cover;display:grid;place-items:center;font-weight:600;font-size:18px;color:#556;flex:none}
   label.avatar{cursor:pointer}
@@ -60,6 +63,7 @@
 </style>
 <main>
   <h1>🎾 Tennis Meetup</h1>
+  <div id="acct" class="acct"></div>
   <div id="map"></div>
   <p id="hint"></p>
   <h2>Members</h2><div class="grid" id="members"></div>
@@ -78,18 +82,10 @@ const FACILITIES = ['シャワー', '更衣室', 'カフェ', 'レストラン',
 const GROUNDS = ['', '砂入り人工芝', 'ハード', '人工芝', 'クレー(土)', '天然芝'];
 const HINT = 'Click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
 let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
-S.req ||= {facilities: []}; // requirements for the search: g:<ground>, Indoor, Outdoor, total, maxPrice (min court counts), facilities
-S.courts.forEach(c => {
-  c.tags ||= []; c.facilities ||= [];
-  // Older cards had one ground + Outdoor/Indoor tags; turn them into surface groups.
-  c.groups ||= WHERE.filter(w => c.tags.includes(w)).map(where => ({where, ground: c.ground || '', n: c.courts || ''}));
-  c.tags = c.tags.filter(t => !WHERE.includes(t));
-});
-
 const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
-S.members.forEach(m => m.work || Object.assign(m, WORK));
 const editing = new Set(); // court cards currently open for editing (not saved)
-const save = () => localStorage.meetup = JSON.stringify(S);
+let cloud; // set once Firebase has loaded (see Cloud sync below)
+const save = () => { localStorage.meetup = JSON.stringify(S); push(); };
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const toggle = (a, x) => a.includes(x) ? a.splice(a.indexOf(x), 1) : a.push(x);
 const NEW = {
@@ -107,10 +103,23 @@ const SEED = [
   {name: '木場公園テニスコート', address: '35.677371,139.8076515'},
   {name: 'Tennis Courts (墨田・足立あたり)', address: '35.7187379,139.805605'},
 ];
-if (!S.seeded) {
-  S.seeded = 1;
-  SEED.forEach(c => S.courts.push({...NEW.courts(), ...c, addressAt: c.address}));
+// Runs on load and whenever data arrives from the cloud: fills in anything older data is missing.
+function normalize() {
+  S.members ||= []; S.courts ||= [];
+  S.req ||= {facilities: []}; // requirements for the search: g:<ground>, Indoor, Outdoor, total, maxPrice (min court counts), facilities
+  S.courts.forEach(c => {
+    c.tags ||= []; c.facilities ||= [];
+    // Older cards had one ground + Outdoor/Indoor tags; turn them into surface groups.
+    c.groups ||= WHERE.filter(w => c.tags.includes(w)).map(where => ({where, ground: c.ground || '', n: c.courts || ''}));
+    c.tags = c.tags.filter(t => !WHERE.includes(t));
+  });
+  S.members.forEach(m => m.work || Object.assign(m, WORK));
+  if (!S.seeded) {
+    S.seeded = 1;
+    SEED.forEach(c => S.courts.push({...NEW.courts(), ...c, addressAt: c.address}));
+  }
 }
+normalize();
 // A place is a map-picked name with its coordinates kept in `<field>At`.
 const loc = (o, f) => o[f + 'At'] || o[f];
 const latLng = s => (s || '').match(/^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$/)?.slice(1).map(Number);
@@ -374,6 +383,61 @@ go.onclick = async () => {
       </tr>`).join('')}</table>` + skipped;
   } catch (err) { out.textContent = 'Error: ' + err.message; }
 };
+
+// ---- Cloud sync ----
+// Signing in (email link) shares one Firestore doc, groups/main, between everyone on the access list
+// (meta/access, edited from the command line). Signed out, the app just uses localStorage.
+// ponytail: last write wins, no merging; per-person cards or field-level merge if two people edit at once.
+const FB = {apiKey: 'AIzaSyBIbx-rcK96BlNsg4AVgJ2Xw76YoGlUc8U', authDomain: 'tennis-meetup-5322.firebaseapp.com',
+  projectId: 'tennis-meetup-5322', appId: '1:986451609660:web:431d5966fa0f5bc5365b39'};
+const acct = document.getElementById('acct');
+let pushTimer, unsub, note = '';
+const canon = o => JSON.stringify(o, (k, v) => v && typeof v == 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : 1)) : v);
+function push(now) {
+  if (!cloud?.user) return;
+  clearTimeout(pushTimer);
+  const go = () => cloud.fs.setDoc(cloud.ref, JSON.parse(JSON.stringify(S))).catch(e => drawAcct('Could not save to the cloud: ' + e.code));
+  now ? go() : pushTimer = setTimeout(go, 500);
+}
+function drawAcct(msg = note) {
+  note = msg;
+  acct.innerHTML = !cloud ? esc(msg) : cloud.user
+    ? `☁️ Synced as ${esc(cloud.user.email)} <button id=signout>Sign out</button> ${esc(msg)}`
+    : `<input type=email id=em placeholder="your email" value="${esc(localStorage.emailForSignIn || '')}"> <button id=sendlink>Sign in to sync</button> ${esc(msg || 'Your data stays in this browser until you sign in.')}`;
+}
+acct.addEventListener('click', async e => {
+  if (e.target.id == 'signout') return cloud.A.signOut(cloud.auth);
+  if (e.target.id != 'sendlink') return;
+  const email = em.value.trim();
+  if (!email) return;
+  try {
+    await cloud.A.sendSignInLinkToEmail(cloud.auth, email, {url: location.origin + location.pathname, handleCodeInApp: true});
+    localStorage.emailForSignIn = email;
+    drawAcct('Link sent. Open it from your email (check spam) on this browser.');
+  } catch (err) { drawAcct('Could not send the link: ' + err.code); }
+});
+async function initCloud() {
+  const base = 'https://www.gstatic.com/firebasejs/10.14.1/';
+  const [{initializeApp}, A, fs] = await Promise.all(['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js'].map(f => import(base + f)));
+  const app = initializeApp(FB), auth = A.getAuth(app);
+  cloud = {A, fs, auth, ref: fs.doc(fs.getFirestore(app), 'groups', 'main')};
+  if (A.isSignInWithEmailLink(auth, location.href)) {
+    try { await A.signInWithEmailLink(auth, localStorage.emailForSignIn || prompt('Type the email you used to sign in'), location.href); }
+    catch (err) { note = 'Sign-in failed: ' + err.code; }
+    history.replaceState(null, '', location.pathname);
+  }
+  A.onAuthStateChanged(auth, user => {
+    cloud.user = user; unsub?.(); unsub = null; drawAcct(user ? '' : note);
+    if (user) unsub = fs.onSnapshot(cloud.ref, snap => {
+      if (snap.metadata.hasPendingWrites) return;
+      if (!snap.exists()) return push(true); // first device: upload what's here
+      if (canon(snap.data()) == canon(S)) return;
+      S = snap.data(); normalize(); localStorage.meetup = JSON.stringify(S); render();
+    }, err => drawAcct(err.code == 'permission-denied' ? 'This email is not on the access list.' : 'Cloud error: ' + err.code));
+  });
+}
+drawAcct();
+initCloud().catch(err => drawAcct('Cloud sync unavailable: ' + err.message));
 
 render();
 document.head.append(Object.assign(document.createElement('script'),
