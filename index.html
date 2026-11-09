@@ -142,6 +142,7 @@ function initMap() {
     mapTypeControl: true, zoomControl: true, fullscreenControl: false,
   });
   geocoder = new google.maps.Geocoder();
+  map.addListener('idle', declutter);
   info = new google.maps.InfoWindow();
 
   // Traffic / Transit toggles (Map, Terrain and Satellite are in Google's own top-left control).
@@ -247,6 +248,33 @@ function pins() {
   };
   S.members.forEach((m, i) => (!focus || focus.people.includes(m)) && pin(m, m.start, SPOTS[m.start][0], m.name || `Member ${i + 1}`));
   S.courts.forEach((c, i) => (!focus || focus.court == c) && pin(c, 'address', '🎾', c.name || `Court ${i + 1}`));
+  setTimeout(declutter, 0); setTimeout(declutter, 400);
+}
+
+// Nudge pins and route labels apart on screen so none cover each other. Re-run after zoom/pan (map 'idle').
+// ponytail: simple push-apart passes (O(n²) x 40); fine for a few dozen items, no leader lines to the true spot.
+// Also called after layout settles, since markers report no size until Google has attached them.
+function declutter() {
+  // Work on the real on-screen boxes, so it doesn't matter how Google anchors the markers.
+  const els = [...markers, ...shown.filter(o => o.content)].map(m => m.content);
+  els.forEach(el => el.style.transform = '');
+  const items = els.map(el => {
+    const r = el.getBoundingClientRect();
+    return {el, x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width + 6, h: r.height + 6, dx: 0, dy: 0};
+  }).filter(i => i.w > 6);
+  for (let pass = 0; pass < 40; pass++) {
+    let moved = false;
+    for (let a = 0; a < items.length; a++) for (let b = a + 1; b < items.length; b++) {
+      const A = items[a], B = items[b];
+      const ox = (A.w + B.w) / 2 - Math.abs(A.x + A.dx - B.x - B.dx), oy = (A.h + B.h) / 2 - Math.abs(A.y + A.dy - B.y - B.dy);
+      if (ox <= 0 || oy <= 0) continue;
+      moved = true;
+      if (ox < oy) { const s = A.x + A.dx <= B.x + B.dx ? -1 : 1; A.dx += s * ox / 2; B.dx -= s * ox / 2; }
+      else { const s = A.y + A.dy <= B.y + B.dy ? -1 : 1; A.dy += s * oy / 2; B.dy -= s * oy / 2; }
+    }
+    if (!moved) break;
+  }
+  items.forEach(i => i.el.style.transform = `translate(${i.dx}px, ${i.dy}px)`);
 }
 
 const notSet = 'Not set — click, then click the map';
@@ -405,6 +433,7 @@ async function show(k) {
     } catch (err) { out.insertAdjacentText('beforeend', ` (route for ${p.name}: ${err.message})`); }
   }));
   if (mine == showSeq && !bounds.isEmpty()) map.fitBounds(bounds, 70);
+  declutter(); setTimeout(declutter, 400);
 }
 out.addEventListener('click', e => {
   if (e.target.id == 'showall') { focus = null; return pins(); }
