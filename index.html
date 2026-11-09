@@ -43,7 +43,8 @@
   .form .pair{display:flex;gap:8px}.form .chips{margin:0}.form .groups{margin:0}.form .groups select,.form .groups input{width:auto}
   .form .place{width:100%}
   .form .groups>.chip{justify-self:start}
-  .foot{display:flex;justify-content:flex-end;margin-top:18px}
+  .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .foot .ghost{background:none;border:1px solid var(--line);color:var(--text)}
   .foot button{border:0;border-radius:999px;padding:8px 22px;background:var(--accent);color:#fff;font:600 14px system-ui;cursor:pointer}
   .acct{font-size:13px;color:var(--muted);margin:-6px 0 12px}
   .acct input{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
@@ -101,7 +102,7 @@ const GROUNDS = ['', '砂入り人工芝', 'ハード', '人工芝', 'クレー(
 const HINT = 'Search or click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
 let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
 const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
-let editIdx = null; // index of the court open in the editor dialog
+let editIdx = null, editSnap = null; // court open in the editor dialog, and a copy of it from when it opened (for Cancel)
 let cloud; // set once Firebase has loaded (see Cloud sync below)
 const save = () => { focus = null; localStorage.meetup = JSON.stringify(S); push(); };
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -325,7 +326,7 @@ function render() {
       <span>ボール</span><div class=chips>${TAGS.map(t => `<button class="chip ${c.tags.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}">${t}</button>`).join('')}</div>
       <span>設備</span><div class=chips>${FACILITIES.map(t => `<button class="chip ${c.facilities.includes(t) ? 'on' : ''}" data-i=${i} data-tag="${t}" data-list=facilities>${t}</button>`).join('')}</div>
     </div>
-    <div class=foot><button id=editdone>完了</button></div>`;
+    <div class=foot><button id=editcancel class=ghost>キャンセル</button><button id=editdone>完了</button></div>`;
   };
   const R = (label, r) => `<label>${label} <input type=number min=0 data-r="${r}" value="${esc(S.req[r])}" placeholder="—"></label>`;
   req.innerHTML = `<div class=reqs>${GROUNDS.slice(1).map(g => R(g + ' 最低', 'g:' + g)).join('')}
@@ -350,13 +351,17 @@ function render() {
   pins();
 }
 
-editor.addEventListener('close', () => { if (!picking) editIdx = null; render(); });
+// Edits save as you type, so Cancel puts the court back the way it was when the editor opened.
+function cancelEdit() { if (editSnap && S.courts[editIdx]) { S.courts[editIdx] = JSON.parse(editSnap); save(); } }
+editor.addEventListener('cancel', cancelEdit); // Esc
+editor.addEventListener('close', () => { if (!picking) editIdx = editSnap = null; render(); });
 document.addEventListener('click', e => {
   const t = e.target.closest('button');
   if (!t) return;
   const {l, i, del, spot, mode, tag, add, edit, delg, addg, rfac, list = 'tags'} = t.dataset;
-  if (edit != null) editIdx = +edit;
+  if (edit != null) { editIdx = +edit; editSnap = JSON.stringify(S.courts[edit]); }
   else if (t.id == 'editdone') editor.close();
+  else if (t.id == 'editcancel') { cancelEdit(); editor.close(); }
   else if (delg != null) S.courts[i].groups.splice(delg, 1);
   else if (addg != null) S.courts[i].groups.push({where: 'Outdoor', ground: '', n: ''});
   else if (rfac) toggle(S.req.facilities, rfac);
