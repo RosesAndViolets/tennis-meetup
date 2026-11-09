@@ -32,6 +32,8 @@
   #req small{display:block;margin-top:10px;color:var(--muted)}
   .groups{display:grid;gap:6px;margin-top:10px}.groups>div{display:flex;gap:6px;align-items:center}
   .groups select,.groups input{font:inherit;padding:3px;border:1px solid var(--line);border-radius:6px;min-width:0}
+  #search{margin-bottom:8px}
+  #search gmp-place-autocomplete{width:100%;color-scheme:light}
   .acct{font-size:13px;color:var(--muted);margin:-6px 0 12px}
   .acct input{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
   .acct button{font:inherit;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer;color:var(--text)}
@@ -64,6 +66,7 @@
 <main>
   <h1>🎾 Tennis Meetup</h1>
   <div id="acct" class="acct"></div>
+  <div id="search"></div>
   <div id="map"></div>
   <p id="hint"></p>
   <h2>Members</h2><div class="grid" id="members"></div>
@@ -80,7 +83,7 @@ const TAGS = ['軟式', '硬式'];
 const WHERE = ['Outdoor', 'Indoor'];
 const FACILITIES = ['シャワー', '更衣室', 'カフェ', 'レストラン', '照明', '駐車場'];
 const GROUNDS = ['', '砂入り人工芝', 'ハード', '人工芝', 'クレー(土)', '天然芝'];
-const HINT = 'Click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
+const HINT = 'Search or click the map to add a court or member, or set someone\'s home / work. Drag a pin to move it.';
 let S = JSON.parse(localStorage.meetup || 'null') || {members: [], courts: []};
 const WORK = {work: 'ソフトブレーン', workAt: '35.66690,139.76697'}; // everyone's office (from the company's Google Maps link)
 const editing = new Set(); // court cards currently open for editing (not saved)
@@ -162,15 +165,20 @@ function initMap() {
 
   map.addListener('click', async e => {
     e.stop?.(); // our card replaces Google's place card
-    const p = {at: fmt(e.latLng), name: await placeName(e.latLng)};
-    if (picking) { const [l, i, f] = picking; return setPlace(l, i, f, p); }
-    picked = p;
-    const btn = (l, i, f, text) => `<button onclick="setPlace('${l}','${i}','${f}')">${text}</button>`;
-    info.setContent(`<div class=card-pop><b>${esc(p.name)}</b><p>
-      ${btn('courts', 'new', 'address', '🎾 Add court here')} ${btn('members', 'new', 'home', '👤 Add member here')}</p>
-      ${S.members.map((m, i) => `<div>${esc(m.name || `Member ${i + 1}`)}: ${Object.keys(SPOTS).map(f => btn('members', i, f, SPOTS[f].join(' '))).join('')}</div>`).join('')}</div>`);
-    info.setPosition(e.latLng);
-    info.open(map);
+    choose({at: fmt(e.latLng), name: await placeName(e.latLng)}, e.latLng);
+  });
+
+  // Search box with suggestions (station names, buildings, addresses). Picking one acts like clicking that spot.
+  google.maps.importLibrary('places').then(({PlaceAutocompleteElement}) => {
+    const box = new PlaceAutocompleteElement({includedRegionCodes: ['jp']});
+    box.placeholder = 'Search a station, place or address…';
+    search.append(box);
+    box.addEventListener('gmp-select', async ({placePrediction}) => {
+      const place = placePrediction.toPlace();
+      await place.fetchFields({fields: ['displayName', 'location']});
+      map.panTo(place.location); map.setZoom(Math.max(map.getZoom(), 15));
+      choose({at: fmt(place.location), name: place.displayName}, place.location);
+    });
   });
   pins();
   // Seeded courts start with raw coordinates as their address; swap in a real address.
@@ -188,10 +196,22 @@ async function placeName(latLng) {
   } catch { return 'Dropped pin'; }
 }
 
+// A spot was chosen (map click or search): fill the place being picked, or offer what to do with it.
+function choose(p, latLng) {
+  if (picking) { const [l, i, f] = picking; return setPlace(l, i, f, p); }
+  picked = p;
+  const btn = (l, i, f, text) => `<button onclick="setPlace('${l}','${i}','${f}')">${text}</button>`;
+  info.setContent(`<div class=card-pop><b>${esc(p.name)}</b><p>
+    ${btn('courts', 'new', 'address', '🎾 Add court here')} ${btn('members', 'new', 'home', '👤 Add member here')}</p>
+    ${S.members.map((m, i) => `<div>${esc(m.name || `Member ${i + 1}`)}: ${Object.keys(SPOTS).map(f => btn('members', i, f, SPOTS[f].join(' '))).join('')}</div>`).join('')}</div>`);
+  info.setPosition(latLng);
+  info.open(map);
+}
+
 function pick(l, i, f) {
   picking = [l, i, f];
   const who = l == 'courts' ? (S.courts[i].name || `Court ${+i + 1}`) : `${S.members[i].name || `Member ${+i + 1}`}'s ${SPOTS[f][1]}`;
-  hint.textContent = `Now click the map to set ${who}.`;
+  hint.textContent = `Now search above or click the map to set ${who}.`;
   hint.className = 'picking';
   map.getDiv().scrollIntoView({behavior: 'smooth', block: 'center'});
 }
@@ -441,5 +461,5 @@ initCloud().catch(err => drawAcct('Cloud sync unavailable: ' + err.message));
 
 render();
 document.head.append(Object.assign(document.createElement('script'),
-  {src: `https://maps.googleapis.com/maps/api/js?key=${KEY}&libraries=marker&loading=async&callback=initMap`}));
+  {src: `https://maps.googleapis.com/maps/api/js?key=${KEY}&libraries=marker,places&loading=async&callback=initMap`}));
 </script>
